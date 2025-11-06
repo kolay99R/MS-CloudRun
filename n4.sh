@@ -175,10 +175,10 @@ echo "  3️⃣ VLESS gRPC"
 echo "  4️⃣ VMess WS"
 read -rp "Choose [1-4, default 1]: " _opt || true
 case "${_opt:-1}" in
-  2) PROTO="vless-ws"   ; IMAGE="docker.io/n4pro/vl:latest"        ;;
-  3) PROTO="vless-grpc" ; IMAGE="docker.io/n4pro/vlessgrpc:latest" ;;
-  4) PROTO="vmess-ws"   ; IMAGE="docker.io/n4pro/vmess:latest"     ;;
-  *) PROTO="trojan-ws"  ; IMAGE="docker.io/n4pro/tr:latest"        ;;
+  2) PROTO="vless-ws"   ; IMAGE="gcr.io/cloudrun/hello" ;;
+  3) PROTO="vless-grpc" ; IMAGE="gcr.io/cloudrun/hello" ;;
+  4) PROTO="vmess-ws"   ; IMAGE="gcr.io/cloudrun/hello" ;;
+  *) PROTO="trojan-ws"  ; IMAGE="gcr.io/cloudrun/hello" ;;
 esac
 ok "Protocol selected: ${PROTO^^}"
 echo "[Docker Hidden] ${IMAGE}" >>"$LOG_FILE"
@@ -263,16 +263,16 @@ VMESS_UUID="0c890000-4733-b20e-067f-fc341bd20000"
 make_vmess_ws_uri(){
   local host="$1"
   local json=$(cat <<JSON
-{"v":"2","ps":"VMess-WS","add":"vpn.googleapis.com","port":"443","id":"${VMESS_UUID}","aid":"0","scy":"zero","net":"ws","type":"none","host":"${host}","path":"/N4","tls":"tls","sni":"vpn.googleapis.com","alpn":"http/1.1","fp":"randomized"}
+{"v":"2","ps":"VMess-WS","add":"vpn.googleapis.com","port":"443","id":"${VMESS_UUID}","aid":"0","scy":"zero","net":"ws","type":"none","host":"${host}","path":"/trenzych","tls":"tls","sni":"vpn.googleapis.com","alpn":"http/1.1","fp":"randomized"}
 JSON
 )
   base64 <<<"$json" | tr -d '\n' | sed 's/^/vmess:\/\//'
 }
 
 case "$PROTO" in
-  trojan-ws)  URI="trojan://${TROJAN_PASS}@vpn.googleapis.com:443?path=%2FN4&security=tls&host=${CANONICAL_HOST}&type=ws#Trojan-WS" ;;
-  vless-ws)   URI="vless://${VLESS_UUID}@vpn.googleapis.com:443?path=%2FN4&security=tls&encryption=none&host=${CANONICAL_HOST}&type=ws#Vless-WS" ;;
-  vless-grpc) URI="vless://${VLESS_UUID_GRPC}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=n4-grpc&sni=${CANONICAL_HOST}#VLESS-gRPC" ;;
+  trojan-ws)  URI="trojan://${TROJAN_PASS}@vpn.googleapis.com:443?path=%2Ftrenzych&security=tls&host=${CANONICAL_HOST}&type=ws#Trojan-WS" ;;
+  vless-ws)   URI="vless://${VLESS_UUID}@vpn.googleapis.com:443?path=%2Ftrenzych&security=tls&encryption=none&host=${CANONICAL_HOST}&type=ws#Vless-WS" ;;
+  vless-grpc) URI="vless://${VLESS_UUID_GRPC}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=trenzych-grpc&sni=${CANONICAL_HOST}#VLESS-gRPC" ;;
   vmess-ws)   URI="$(make_vmess_ws_uri "${CANONICAL_HOST}")" ;;
 esac
 
