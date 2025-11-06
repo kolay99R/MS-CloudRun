@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ===== Ensure interactive reads even when run via curl/process substitution =====
+# ===== Ensure interactive reads =====
 if [[ ! -t 0 ]] && [[ -e /dev/tty ]]; then
   exec </dev/tty
 fi
 
-# ===== Logging & error handler =====
+# ===== Logging =====
 LOG_FILE="/tmp/n4_cloudrun_$(date +%s).log"
 touch "$LOG_FILE"
 on_err() {
@@ -20,33 +20,26 @@ on_err() {
 }
 trap on_err ERR
 
-# =================== Color & UI ===================
+# ===== Colors & UI =====
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-  RESET=$'\e[0m'; BOLD=$'\e[1m'; DIM=$'\e[2m'
-  C_CYAN=$'\e[38;5;44m'; C_BLUE=$'\e[38;5;33m'
-  C_GREEN=$'\e[38;5;46m'; C_YEL=$'\e[38;5;226m'
-  C_ORG=$'\e[38;5;214m'; C_PINK=$'\e[38;5;205m'
-  C_GREY=$'\e[38;5;245m'; C_RED=$'\e[38;5;196m'
+  RESET=$'\e[0m'; BOLD=$'\e[1m'; C_CYAN=$'\e[38;5;44m'
+  C_BLUE=$'\e[38;5;33m'; C_GREEN=$'\e[38;5;46m'
+  C_ORG=$'\e[38;5;214m'; C_GREY=$'\e[38;5;245m'; C_RED=$'\e[38;5;196m'
 else
-  RESET= BOLD= DIM= C_CYAN= C_BLUE= C_GREEN= C_YEL= C_ORG= C_PINK= C_GREY= C_RED=
+  RESET= BOLD= C_CYAN= C_BLUE= C_GREEN= C_ORG= C_GREY= C_RED=
 fi
 
 hr(){ printf "${C_GREY}%s${RESET}\n" "──────────────────────────────────────────────"; }
-banner(){
-  local title="$1"
-  printf "\n${C_BLUE}${BOLD}╔══════════════════════════════════════════════════╗${RESET}\n"
-  printf   "${C_BLUE}${BOLD}║${RESET}  %s${RESET}\n" "$(printf "%-46s" "$title")"
-  printf   "${C_BLUE}${BOLD}╚══════════════════════════════════════════════════╝${RESET}\n"
-}
+banner(){ printf "\n${C_BLUE}${BOLD}╔══════════════════════════════════════════════════╗${RESET}\n${C_BLUE}${BOLD}║${RESET}  %-46s${C_BLUE}${BOLD}║${RESET}\n${C_BLUE}${BOLD}╚══════════════════════════════════════════════════╝${RESET}\n" "$1"; }
 ok(){   printf "${C_GREEN}✔${RESET} %s\n" "$1"; }
 warn(){ printf "${C_ORG}⚠${RESET} %s\n" "$1"; }
 err(){  printf "${C_RED}✘${RESET} %s\n" "$1"; }
 kv(){   printf "   ${C_GREY}%s${RESET}  %s\n" "$1" "$2"; }
 
-printf "\n${C_CYAN}${BOLD}🚀 N4 Cloud Run — One-Click Deploy${RESET} ${C_GREY}(Trojan WS / VLESS WS / VLESS gRPC / VMess WS)${RESET}\n"
+printf "\n${C_CYAN}${BOLD}🚀 N4 Cloud Run — One-Click Deploy${RESET} ${C_GREY}(Trojan / VLESS / VMess)${RESET}\n"
 hr
 
-# =================== Random progress spinner ===================
+# ===== Progress Spinner =====
 run_with_progress() {
   local label="$1"; shift
   ( "$@" ) >>"$LOG_FILE" 2>&1 &
@@ -75,99 +68,60 @@ run_with_progress() {
   fi
 }
 
-# =================== Step 1: Telegram Config ===================
+# ===== Step 1: Telegram Setup =====
 banner "🚀 Step 1 — Telegram Setup"
-TELEGRAM_TOKEN="${TELEGRAM_TOKEN:-}"
-TELEGRAM_CHAT_IDS="${TELEGRAM_CHAT_IDS:-${TELEGRAM_CHAT_ID:-}}"
+read -rp "🤖 Telegram Bot Token: " TELEGRAM_TOKEN || true
+read -rp "👤 Chat ID(s) (comma-separated): " TELEGRAM_CHAT_IDS || true
 
-if [[ ( -z "${TELEGRAM_TOKEN}" || -z "${TELEGRAM_CHAT_IDS}" ) && -f .env ]]; then
-  set -a; source ./.env; set +a
-fi
-
-read -rp "🤖 Telegram Bot Token: " _tk || true
-[[ -n "${_tk:-}" ]] && TELEGRAM_TOKEN="$_tk"
-if [[ -z "${TELEGRAM_TOKEN:-}" ]]; then
-  warn "Telegram token empty; deploy will continue without messages."
-else
-  ok "Telegram token captured."
-fi
-
-read -rp "👤 Owner/Channel Chat ID(s): " _ids || true
-[[ -n "${_ids:-}" ]] && TELEGRAM_CHAT_IDS="${_ids// /}"
-
-DEFAULT_LABEL="Join N4 VPN Channel"
-DEFAULT_URL="https://t.me/n4vpn"
+# Optional button setup
 BTN_LABELS=(); BTN_URLS=()
-
-read -rp "➕ Add URL button(s)? [y/N]: " _addbtn || true
-if [[ "${_addbtn:-}" =~ ^([yY]|yes)$ ]]; then
-  i=0
-  while true; do
-    echo "—— Button $((i+1)) ——"
-    read -rp "🔖 Label [default: ${DEFAULT_LABEL}]: " _lbl || true
-    if [[ -z "${_lbl:-}" ]]; then
-      BTN_LABELS+=("${DEFAULT_LABEL}")
-      BTN_URLS+=("${DEFAULT_URL}")
-      ok "Added: ${DEFAULT_LABEL} → ${DEFAULT_URL}"
-    else
-      read -rp "🔗 URL (http/https): " _url || true
-      if [[ -n "${_url:-}" && "${_url}" =~ ^https?:// ]]; then
-        BTN_LABELS+=("${_lbl}")
-        BTN_URLS+=("${_url}")
-        ok "Added: ${_lbl} → ${_url}"
-      else
-        warn "Skipped (invalid or empty URL)."
-      fi
-    fi
-    i=$(( i + 1 ))
-    (( i >= 3 )) && break
-    read -rp "➕ Add another button? [y/N]: " _more || true
-    [[ "${_more:-}" =~ ^([yY]|yes)$ ]] || break
+read -rp "➕ Add Telegram buttons? [y/N]: " _add || true
+if [[ "${_add,,}" =~ ^(y|yes)$ ]]; then
+  for i in 1 2 3; do
+    read -rp "🔖 Button $i label: " lbl || true
+    read -rp "🔗 Button $i URL (https://...): " url || true
+    [[ -n "$lbl" && "$url" =~ ^https?:// ]] && BTN_LABELS+=("$lbl") && BTN_URLS+=("$url")
+    read -rp "➕ Add another? [y/N]: " more || true
+    [[ "${more,,}" =~ ^(y|yes)$ ]] || break
   done
 fi
 
-CHAT_ID_ARR=()
-IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS:-}" || true
+CHAT_ID_ARR=(); IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS:-}"
 
 json_escape(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 tg_send(){
   local text="$1" RM=""
-  if [[ -z "${TELEGRAM_TOKEN:-}" || ${#CHAT_ID_ARR[@]} -eq 0 ]]; then return 0; fi
+  (( ${#CHAT_ID_ARR[@]} == 0 )) && return 0
   if (( ${#BTN_LABELS[@]} > 0 )); then
-    local L1 U1 L2 U2 L3 U3
-    [[ -n "${BTN_LABELS[0]:-}" ]] && L1="$(json_escape "${BTN_LABELS[0]}")" && U1="$(json_escape "${BTN_URLS[0]}")"
-    [[ -n "${BTN_LABELS[1]:-}" ]] && L2="$(json_escape "${BTN_LABELS[1]}")" && U2="$(json_escape "${BTN_URLS[1]}")"
-    [[ -n "${BTN_LABELS[2]:-}" ]] && L3="$(json_escape "${BTN_LABELS[2]}")" && U3="$(json_escape "${BTN_URLS[2]}")"
-    if (( ${#BTN_LABELS[@]} == 1 )); then
-      RM="{\"inline_keyboard\":[[{\"text\":\"${L1}\",\"url\":\"${U1}\"}]]}"
-    elif (( ${#BTN_LABELS[@]} == 2 )); then
-      RM="{\"inline_keyboard\":[[{\"text\":\"${L1}\",\"url\":\"${U1}\"}],[{\"text\":\"${L2}\",\"url\":\"${U2}\"}]]}"
-    else
-      RM="{\"inline_keyboard\":[[{\"text\":\"${L1}\",\"url\":\"${U1}\"}],[{\"text\":\"${L2}\",\"url\":\"${U2}\"},{\"text\":\"${L3}\",\"url\":\"${U3}\"}]]}"
-    fi
+    local parts=()
+    for ((i=0; i<${#BTN_LABELS[@]}; i++)); do
+      local L="$(json_escape "${BTN_LABELS[$i]}")"
+      local U="$(json_escape "${BTN_URLS[$i]}")"
+      parts+=("{\"text\":\"${L}\",\"url\":\"${U}\"}")
+    done
+    RM="{\"inline_keyboard\":[[${parts[*]}]]}"
+    RM=$(echo "$RM" | tr -d '\n')
   fi
-  for _cid in "${CHAT_ID_ARR[@]}"; do
+  for id in "${CHAT_ID_ARR[@]}"; do
     curl -s -S -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-      -d "chat_id=${_cid}" \
+      -d "chat_id=${id}" \
       --data-urlencode "text=${text}" \
       -d "parse_mode=HTML" \
       ${RM:+--data-urlencode "reply_markup=${RM}"} >>"$LOG_FILE" 2>&1
-    ok "Telegram sent → ${_cid}"
+    ok "Telegram sent → ${id}"
   done
 }
 
-# =================== Step 2: Project ===================
+# ===== Step 2: Project =====
 banner "🧭 Step 2 — GCP Project"
 PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
-if [[ -z "$PROJECT" ]]; then
-  err "No active project. Run: gcloud config set project <YOUR_PROJECT_ID>"
-  exit 1
-fi
-PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')" || true
+[[ -z "$PROJECT" ]] && err "No active project. Run: gcloud config set project <project_id>" && exit 1
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)' 2>/dev/null || true)"
+PROJECT_NUMBER="${PROJECT_NUMBER:-$(gcloud projects list --filter="projectId=$PROJECT" --format='value(projectNumber)')}"
 ok "Project Loaded: ${PROJECT}"
 
-# =================== Step 3: Protocol ===================
+# ===== Step 3: Protocol =====
 banner "🧩 Step 3 — Select Protocol"
 echo "  1️⃣ Trojan WS"
 echo "  2️⃣ VLESS WS"
@@ -175,15 +129,14 @@ echo "  3️⃣ VLESS gRPC"
 echo "  4️⃣ VMess WS"
 read -rp "Choose [1-4, default 1]: " _opt || true
 case "${_opt:-1}" in
-  2) PROTO="vless-ws"   ; IMAGE="gcr.io/cloudrun/hello" ;;
-  3) PROTO="vless-grpc" ; IMAGE="gcr.io/cloudrun/hello" ;;
-  4) PROTO="vmess-ws"   ; IMAGE="gcr.io/cloudrun/hello" ;;
-  *) PROTO="trojan-ws"  ; IMAGE="gcr.io/cloudrun/hello" ;;
+  2) PROTO="vless-ws"   ; IMAGE="docker.io/n4pro/vl:latest" ;;
+  3) PROTO="vless-grpc" ; IMAGE="docker.io/n4pro/vlessgrpc:latest" ;;
+  4) PROTO="vmess-ws"   ; IMAGE="docker.io/n4pro/vmess:latest" ;;
+  *) PROTO="trojan-ws"  ; IMAGE="docker.io/n4pro/tr:latest" ;;
 esac
 ok "Protocol selected: ${PROTO^^}"
-echo "[Docker Hidden] ${IMAGE}" >>"$LOG_FILE"
 
-# =================== Step 4: Region ===================
+# ===== Step 4: Region =====
 banner "🌍 Step 4 — Region"
 echo "1) 🇸🇬 Singapore (asia-southeast1)"
 echo "2) 🇺🇸 US (us-central1)"
@@ -198,63 +151,54 @@ case "${_r:-2}" in
 esac
 ok "Region: ${REGION}"
 
-# =================== Step 5: Resources ===================
+# ===== Step 5: Resources =====
 banner "🧮 Step 5 — Resources"
-read -rp "CPU [1/2/4/6, default 2]: " _cpu || true
+read -rp "CPU [1/2/4, default 2]: " _cpu || true
 CPU="${_cpu:-2}"
-read -rp "Memory [512Mi/1Gi/2Gi(default)/4Gi/8Gi]: " _mem || true
+read -rp "Memory [512Mi/1Gi/2Gi(default)/4Gi]: " _mem || true
 MEMORY="${_mem:-2Gi}"
 ok "CPU/Mem: ${CPU} vCPU / ${MEMORY}"
 
-# =================== Step 6: Service Name ===================
+# ===== Step 6: Service =====
 banner "🪪 Step 6 — Service Name"
-SERVICE="${SERVICE:-freen4vpn}"
-TIMEOUT="${TIMEOUT:-3600}"
-PORT="${PORT:-8080}"
-read -rp "Service name [default: ${SERVICE}]: " _svc || true
-SERVICE="${_svc:-$SERVICE}"
+read -rp "Service name [default: freen4vpn]: " _svc || true
+SERVICE="${_svc:-freen4vpn}"
 ok "Service: ${SERVICE}"
 
-# =================== Timezone Setup ===================
+# ===== Time Setup =====
 export TZ="Asia/Yangon"
 START_EPOCH="$(date +%s)"
 END_EPOCH="$(( START_EPOCH + 5*3600 ))"
 fmt_dt(){ date -d @"$1" "+%d.%m.%Y %I:%M %p"; }
 START_LOCAL="$(fmt_dt "$START_EPOCH")"
 END_LOCAL="$(fmt_dt "$END_EPOCH")"
-banner "🕒 Step 7 — Deployment Time"
-kv "Start:" "${START_LOCAL}"
-kv "End:"   "${END_LOCAL}"
 
-# =================== Enable APIs ===================
-banner "⚙️ Step 8 — Enable APIs"
-run_with_progress "Enabling CloudRun & Build APIs" \
-  gcloud services enable run.googleapis.com cloudbuild.googleapis.com --quiet
+# ===== Enable APIs =====
+banner "⚙️ Step 7 — Enable APIs"
+run_with_progress "Enabling CloudRun APIs" gcloud services enable run.googleapis.com cloudbuild.googleapis.com --quiet
 
-# =================== Deploy ===================
-banner "🚀 Step 9 — Deploying to Cloud Run"
-run_with_progress "Deploying ${SERVICE}" \
-  gcloud run deploy "$SERVICE" \
-    --image="$IMAGE" \
-    --platform=managed \
-    --region="$REGION" \
-    --memory="$MEMORY" \
-    --cpu="$CPU" \
-    --timeout="$TIMEOUT" \
-    --allow-unauthenticated \
-    --port="$PORT" \
-    --min-instances=1 \
-    --quiet
+# ===== Deploy =====
+banner "🚀 Step 8 — Deploying"
+run_with_progress "Deploying ${SERVICE}" gcloud run deploy "$SERVICE" \
+  --image="$IMAGE" \
+  --platform=managed \
+  --region="$REGION" \
+  --memory="$MEMORY" \
+  --cpu="$CPU" \
+  --timeout="1800" \
+  --allow-unauthenticated \
+  --port=8080 \
+  --min-instances=1 \
+  --quiet
 
-# =================== Result ===================
-PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')" || true
+# ===== Result =====
 CANONICAL_HOST="${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
 URL_CANONICAL="https://${CANONICAL_HOST}"
-banner "✅ Result"
+banner "✅ Deployment Result"
 ok "Service Ready"
 kv "URL:" "${C_CYAN}${BOLD}${URL_CANONICAL}${RESET}"
 
-# =================== Protocol URLs ===================
+# ===== Protocol URLs =====
 TROJAN_PASS="Trojan-2025"
 VLESS_UUID="0c890000-4733-b20e-067f-fc341bd20000"
 VLESS_UUID_GRPC="0c890000-4733-4a0e-9a7f-fc341bd20000"
@@ -266,7 +210,7 @@ make_vmess_ws_uri(){
 {"v":"2","ps":"VMess-WS","add":"vpn.googleapis.com","port":"443","id":"${VMESS_UUID}","aid":"0","scy":"zero","net":"ws","type":"none","host":"${host}","path":"/trenzych","tls":"tls","sni":"vpn.googleapis.com","alpn":"http/1.1","fp":"randomized"}
 JSON
 )
-  base64 <<<"$json" | tr -d '\n' | sed 's/^/vmess:\/\//'
+  base64 -w0 <<<"$json" | sed 's/^/vmess:\/\//'
 }
 
 case "$PROTO" in
@@ -276,24 +220,21 @@ case "$PROTO" in
   vmess-ws)   URI="$(make_vmess_ws_uri "${CANONICAL_HOST}")" ;;
 esac
 
-# =================== Telegram Notify ===================
-banner "📣 Step 10 — Telegram Notify"
-
+# ===== Telegram Notify =====
+banner "📣 Step 9 — Telegram Notify"
 MSG=$(cat <<EOF
 ✅ <b>CloudRun Deploy Success</b>
 ━━━━━━━━━━━━━━━━━━
 <blockquote>🌍 <b>Region:</b> ${REGION}
 ⚙️ <b>Protocol:</b> ${PROTO^^}
 🔗 <b>URL:</b> <a href="${URL_CANONICAL}">${URL_CANONICAL}</a></blockquote>
-🔑 <b>V2Ray Configuration Access Key :</b>
 <pre><code>${URI}</code></pre>
-<blockquote>🕒 <b>Start:</b> ${START_LOCAL}
-⏳ <b>End:</b> ${END_LOCAL}</blockquote>
+<blockquote>🕒 Start: ${START_LOCAL}
+⏳ End: ${END_LOCAL}</blockquote>
 ━━━━━━━━━━━━━━━━━━
 EOF
 )
-
 tg_send "${MSG}"
 
-printf "\n${C_GREEN}${BOLD}✨ Done — Warm Instance Enabled (min=1) | Beautiful Banner UI | Cold Start Prevented${RESET}\n"
+printf "\n${C_GREEN}${BOLD}✨ Done — CloudRun Warm Instance Ready!${RESET}\n"
 printf "${C_GREY}📄 Log file: ${LOG_FILE}${RESET}\n"
