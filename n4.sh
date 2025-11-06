@@ -185,7 +185,7 @@ run_with_progress "Deploying ${SERVICE}" gcloud run deploy "$SERVICE" \
   --region="$REGION" \
   --memory="$MEMORY" \
   --cpu="$CPU" \
-  --timeout="1800" \
+  --timeout=1800 \
   --allow-unauthenticated \
   --port=8080 \
   --min-instances=1 \
